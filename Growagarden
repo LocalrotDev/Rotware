@@ -1,0 +1,214 @@
+-- Load Rayfield
+local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
+
+local Window = Rayfield:CreateWindow({
+    Name = "RotwareHub - Grow a Garden",
+    LoadingTitle = "RotwareHub",
+    LoadingSubtitle = "Grow a Garden Edition",
+    ConfigurationSaving = {
+        Enabled = true,
+        FolderName = nil,
+        FileName = "GrowAGardenConfig"
+    },
+    Theme = "Default",
+})
+
+local MainTab = Window:CreateTab("Main")
+
+-- Auto Farm
+local autoFarm = false
+MainTab:CreateToggle({
+    Name = "Auto Harvest Crops",
+    CurrentValue = false,
+    Callback = function(state)
+        autoFarm = state
+        while autoFarm and task.wait(0.2) do
+            local plot = workspace:FindFirstChild(game.Players.LocalPlayer.Name .. "'s Plot")
+            if plot then
+                for _, v in pairs(plot:GetDescendants()) do
+                    if v:IsA("ProximityPrompt") and v.Name == "Harvest" then
+                        fireproximityprompt(v)
+                    end
+                end
+            end
+        end
+    end,
+})
+
+-- Auto Plant
+local autoPlant = false
+MainTab:CreateToggle({
+    Name = "Auto Replant",
+    CurrentValue = false,
+    Callback = function(state)
+        autoPlant = state
+        while autoPlant and task.wait(0.3) do
+            local plot = workspace:FindFirstChild(game.Players.LocalPlayer.Name .. "'s Plot")
+            if plot then
+                for _, v in pairs(plot:GetDescendants()) do
+                    if v:IsA("ProximityPrompt") and v.Name == "Plant" then
+                        fireproximityprompt(v)
+                    end
+                end
+            end
+        end
+    end,
+})
+
+-- Auto Water
+local autoWater = false
+MainTab:CreateToggle({
+    Name = "Auto Water Plants",
+    CurrentValue = false,
+    Callback = function(state)
+        autoWater = state
+        while autoWater and task.wait(0.3) do
+            local plot = workspace:FindFirstChild(game.Players.LocalPlayer.Name .. "'s Plot")
+            if plot then
+                for _, v in pairs(plot:GetDescendants()) do
+                    if v:IsA("ProximityPrompt") and v.Name == "Water" then
+                        fireproximityprompt(v)
+                    end
+                end
+            end
+        end
+    end,
+})
+
+-- Auto Fertilize
+local autoFert = false
+MainTab:CreateToggle({
+    Name = "Auto Fertilize",
+    CurrentValue = false,
+    Callback = function(state)
+        autoFert = state
+        while autoFert and task.wait(0.3) do
+            local plot = workspace:FindFirstChild(game.Players.LocalPlayer.Name .. "'s Plot")
+            if plot then
+                for _, v in pairs(plot:GetDescendants()) do
+                    if v:IsA("ProximityPrompt") and v.Name == "Fertilize" then
+                        fireproximityprompt(v)
+                    end
+                end
+            end
+        end
+    end,
+})
+
+-- Auto Sell
+local autoSell = false
+MainTab:CreateToggle({
+    Name = "Auto Sell",
+    CurrentValue = false,
+    Callback = function(state)
+        autoSell = state
+        while autoSell and task.wait(1) do
+            local sellPad = workspace:FindFirstChild("SellPad") or workspace:FindFirstChild("SellArea")
+            if sellPad then
+                game.Players.LocalPlayer.Character:PivotTo(sellPad.CFrame + Vector3.new(0, 3, 0))
+            end
+        end
+    end,
+})
+
+-- Walkspeed
+local walkSpeed = 16
+MainTab:CreateInput({
+    Name = "WalkSpeed",
+    PlaceholderText = "16",
+    RemoveTextAfterFocusLost = true,
+    Callback = function(value)
+        local ws = tonumber(value)
+        if ws then
+            walkSpeed = math.clamp(ws, 1, 100)
+            local hum = game.Players.LocalPlayer.Character and game.Players.LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
+            if hum then hum.WalkSpeed = walkSpeed end
+        end
+    end,
+})
+
+local wsLoop = false
+MainTab:CreateToggle({
+    Name = "Apply WalkSpeed Constantly",
+    CurrentValue = false,
+    Callback = function(state)
+        wsLoop = state
+        while wsLoop and task.wait(0.3) do
+            local hum = game.Players.LocalPlayer.Character and game.Players.LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
+            if hum then hum.WalkSpeed = walkSpeed end
+        end
+    end,
+})
+
+-- Infinite Stamina
+MainTab:CreateButton({
+    Name = "Infinite Stamina (Experimental)",
+    Callback = function()
+        local player = game.Players.LocalPlayer
+        local stats = player:FindFirstChild("Stats") or player:FindFirstChild("Leaderstats")
+        if stats then
+            local stamina = stats:FindFirstChild("Stamina")
+            if stamina then
+                stamina:GetPropertyChangedSignal("Value"):Connect(function()
+                    stamina.Value = 100
+                end)
+            end
+        end
+    end,
+})
+
+-- TELEPORT TAB
+local TeleTab = Window:CreateTab("Teleport")
+
+local zones = {
+    ["Home Plot"] = "YourPlot",
+    ["Spawn"] = "SpawnLocation",
+    ["Sell Area"] = "SellPad",
+    ["Watering Area"] = "WaterSource",
+    ["Upgrade Shop"] = "UpgradeShop",
+    ["Fertilizer Zone"] = "FertilizerZone"
+}
+
+for name, objName in pairs(zones) do
+    TeleTab:CreateButton({
+        Name = "Teleport to " .. name,
+        Callback = function()
+            local loc = workspace:FindFirstChild(objName)
+            if loc and loc:IsA("BasePart") then
+                game.Players.LocalPlayer.Character:PivotTo(loc.CFrame + Vector3.new(0, 5, 0))
+            end
+        end,
+    })
+end
+
+-- GARDEN MODIFIERS
+local MiscTab = Window:CreateTab("Misc")
+
+MiscTab:CreateToggle({
+    Name = "Auto Collect Drops",
+    CurrentValue = false,
+    Callback = function(state)
+        _G.AutoCollect = state
+        while _G.AutoCollect and task.wait(0.2) do
+            for _, drop in pairs(workspace:GetDescendants()) do
+                if drop:IsA("ProximityPrompt") and drop.Name == "Collect" then
+                    fireproximityprompt(drop)
+                end
+            end
+        end
+    end,
+})
+
+MiscTab:CreateButton({
+    Name = "Instant Plant Growth (Glitchy)",
+    Callback = function()
+        local plot = workspace:FindFirstChild(game.Players.LocalPlayer.Name .. "'s Plot")
+        if plot then
+            for _, crop in pairs(plot:GetDescendants()) do
+                if crop:FindFirstChild("Growth") then
+                    crop.Growth.Value = 100
+                end
+            end
+        end
+    end,
+})
