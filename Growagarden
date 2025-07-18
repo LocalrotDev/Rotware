@@ -1,127 +1,93 @@
--- Grow a Garden Auto-Farm Script (Rayfield UI Version)
--- Author: depso (depthso) | Converted by ChatGPT
-
 --// Services
-local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local MarketplaceService = game:GetService("MarketplaceService")
-local RunService = game:GetService("RunService")
 local InsertService = game:GetService("InsertService")
+local MarketplaceService = game:GetService("MarketplaceService")
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
 
 local LocalPlayer = Players.LocalPlayer
+local Leaderstats = LocalPlayer:WaitForChild("leaderstats")
 local Backpack = LocalPlayer:WaitForChild("Backpack")
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
-local Leaderstats = LocalPlayer:WaitForChild("leaderstats")
-local ShecklesCount = Leaderstats:WaitForChild("Sheckles")
 
-local GameEvents = ReplicatedStorage:WaitForChild("GameEvents")
-local Farms = workspace:WaitForChild("Farm")
+local ShecklesCount = Leaderstats:WaitForChild("Sheckles")
 local GameInfo = MarketplaceService:GetProductInfo(game.PlaceId)
 
---// Rayfield
-loadstring(game:HttpGet('https://raw.githubusercontent.com/shlexware/Rayfield/main/source'))()
+--// Rayfield UI
+local Rayfield = loadstring(game:HttpGet("https://raw.githubusercontent.com/shlexware/Rayfield/main/source"))()
 
 local Window = Rayfield:CreateWindow({
-    Name = GameInfo.Name .. " | Depso",
-    LoadingTitle = "Rotware Hub v1",
-    LoadingSubtitle = "by depso",
-    ConfigurationSaving = {
-        Enabled = false
-    },
-    Discord = {
-        Enabled = false
-    },
-    KeySystem = false
+	Name = GameInfo.Name .. " | Rotware Hub",
+	LoadingTitle = "Rotware Garden",
+	LoadingSubtitle = "by depso",
+	ConfigurationSaving = {
+		Enabled = false,
+		FolderName = nil,
+		FileName = "RotwareGarden"
+	},
+	Discord = {
+		Enabled = false,
+		Invite = "",
+		RememberJoins = false
+	},
+	KeySystem = false,
+	KeySettings = {}
 })
 
---// Variables
+--// Folders
+local GameEvents = ReplicatedStorage:WaitForChild("GameEvents")
+local Farms = workspace:WaitForChild("Farm")
+
+--// Globals
 local SelectedSeed = ""
 local AutoPlant = false
 local AutoPlantRandom = false
 local AutoHarvest = false
 local AutoBuy = false
 local AutoSell = false
-local AutoWalk = false
 local NoClip = false
+local AutoWalk = false
 local AutoWalkAllowRandom = true
 local AutoWalkMaxWait = 10
 local SellThreshold = 15
+
 local SeedStock = {}
 local OwnedSeeds = {}
-local HarvestIgnores = {
-    Normal = false,
-    Gold = false,
-    Rainbow = false
-}
+local HarvestIgnores = { Normal = false, Gold = false, Rainbow = false }
+
+local AutoWalkStatusLabel = nil
+local SelectedSeedStock = ""
+
+--// Utility Functions
+local function Plant(Position, Seed)
+	GameEvents.Plant_RE:FireServer(Position, Seed)
+	task.wait(0.3)
+end
 
 local function GetFarms()
-    return Farms:GetChildren()
+	return Farms:GetChildren()
 end
 
 local function GetFarmOwner(Farm)
-    return Farm.Important.Data.Owner.Value
+	return Farm.Important.Data.Owner.Value
 end
 
 local function GetFarm(PlayerName)
-    for _, Farm in next, GetFarms() do
-        if GetFarmOwner(Farm) == PlayerName then
-            return Farm
-        end
-    end
+	for _, Farm in next, GetFarms() do
+		if GetFarmOwner(Farm) == PlayerName then
+			return Farm
+		end
+	end
 end
 
 local function GetArea(Base)
-    local Center = Base.Position
-    local Size = Base.Size
-    local X1 = math.ceil(Center.X - Size.X/2)
-    local Z1 = math.ceil(Center.Z - Size.Z/2)
-    local X2 = math.floor(Center.X + Size.X/2)
-    local Z2 = math.floor(Center.Z + Size.Z/2)
-    return X1, Z1, X2, Z2
-end
-
-local function GetSeedInfo(Tool)
-    local PlantName = Tool:FindFirstChild("Plant_Name")
-    local Count = Tool:FindFirstChild("Numbers")
-    if not PlantName then return end
-    return PlantName.Value, Count and Count.Value
-end
-
-local function CollectSeedsFrom(Parent)
-    for _, Tool in pairs(Parent:GetChildren()) do
-        local Name, Count = GetSeedInfo(Tool)
-        if Name then
-            OwnedSeeds[Name] = { Count = Count, Tool = Tool }
-        end
-    end
-end
-
-local function GetOwnedSeeds()
-    OwnedSeeds = {}
-    CollectSeedsFrom(LocalPlayer.Character)
-    CollectSeedsFrom(Backpack)
-    return OwnedSeeds
-end
-
-local function CollectCropsFrom(Parent, Crops)
-    for _, Tool in pairs(Parent:GetChildren()) do
-        local Name = Tool:FindFirstChild("Item_String")
-        if Name then
-            table.insert(Crops, Tool)
-        end
-    end
-end
-
-local function GetInvCrops()
-    local Crops = {}
-    CollectCropsFrom(LocalPlayer.Character, Crops)
-    CollectCropsFrom(Backpack, Crops)
-    return Crops
-end
-
-local function Plant(Position, Seed)
-    GameEvents.Plant_RE:FireServer(Position, Seed)
-    wait(.3)
+	local Center = Base:GetPivot()
+	local Size = Base.Size
+	local X1 = math.ceil(Center.X - (Size.X / 2))
+	local Z1 = math.ceil(Center.Z - (Size.Z / 2))
+	local X2 = math.floor(Center.X + (Size.X / 2))
+	local Z2 = math.floor(Center.Z + (Size.Z / 2))
+	return X1, Z1, X2, Z2
 end
 
 local MyFarm = GetFarm(LocalPlayer.Name)
@@ -132,216 +98,310 @@ local Dirt = PlantLocations:FindFirstChildOfClass("Part")
 local X1, Z1, X2, Z2 = GetArea(Dirt)
 
 local function GetRandomFarmPoint()
-    local Locations = PlantLocations:GetChildren()
-    local Land = Locations[math.random(1, #Locations)]
-    local X1, Z1, X2, Z2 = GetArea(Land)
-    return Vector3.new(math.random(X1, X2), 4, math.random(Z1, Z2))
+	local FarmLand = PlantLocations:GetChildren()[math.random(1, #PlantLocations:GetChildren())]
+	local X1, Z1, X2, Z2 = GetArea(FarmLand)
+	return Vector3.new(math.random(X1, X2), 4, math.random(Z1, Z2))
 end
 
-local function EquipTool(Tool)
-    if Tool.Parent == Backpack then
-        LocalPlayer.Character.Humanoid:EquipTool(Tool)
-    end
+local function GetSeedInfo(Seed)
+	local PlantName = Seed:FindFirstChild("Plant_Name")
+	local Count = Seed:FindFirstChild("Numbers")
+	if not PlantName then return end
+	return PlantName.Value, Count.Value
+end
+
+local function CollectSeeds(Parent)
+	for _, Tool in next, Parent:GetChildren() do
+		local Name, Count = GetSeedInfo(Tool)
+		if Name then
+			OwnedSeeds[Name] = { Count = Count, Tool = Tool }
+		end
+	end
+end
+
+local function GetOwnedSeeds()
+	CollectSeeds(Backpack)
+	CollectSeeds(LocalPlayer.Character)
+	return OwnedSeeds
+end
+
+local function EquipCheck(Tool)
+	if Tool and Tool.Parent == Backpack then
+		LocalPlayer.Character:FindFirstChildOfClass("Humanoid"):EquipTool(Tool)
+	end
 end
 
 local function AutoPlantLoop()
-    local Seeds = GetOwnedSeeds()
-    local SeedData = Seeds[SelectedSeed]
-    if not SeedData then return end
-
-    local Tool = SeedData.Tool
-    local Count = SeedData.Count
-    if Count <= 0 then return end
-
-    EquipTool(Tool)
-
-    if AutoPlantRandom then
-        for i = 1, Count do
-            Plant(GetRandomFarmPoint(), SelectedSeed)
-        end
-    else
-        for X = X1, X2 do
-            for Z = Z1, Z2 do
-                Plant(Vector3.new(X, 0.13, Z), SelectedSeed)
-            end
-        end
-    end
+	local SeedData = OwnedSeeds[SelectedSeed]
+	if not SeedData then return end
+	if SeedData.Count <= 0 then return end
+	EquipCheck(SeedData.Tool)
+	if AutoPlantRandom then
+		for i = 1, SeedData.Count do
+			Plant(GetRandomFarmPoint(), SelectedSeed)
+		end
+	else
+		local Planted = 0
+		for x = X1, X2, 1 do
+			for z = Z1, Z2, 1 do
+				if Planted > SeedData.Count then return end
+				Plant(Vector3.new(x, 0.13, z), SelectedSeed)
+				Planted += 1
+			end
+		end
+	end
 end
 
-local function HarvestPlant(Plant)
-    local Prompt = Plant:FindFirstChild("ProximityPrompt", true)
-    if Prompt and Prompt.Enabled then
-        fireproximityprompt(Prompt)
-    end
-end
-
-local function CollectHarvestable(Parent, List, IgnoreDistance)
-    local CharPos = LocalPlayer.Character:GetPivot().Position
-    for _, Plant in pairs(Parent:GetChildren()) do
-        local Fruits = Plant:FindFirstChild("Fruits")
-        if Fruits then
-            CollectHarvestable(Fruits, List, IgnoreDistance)
-        end
-        local Prompt = Plant:FindFirstChild("ProximityPrompt", true)
-        local Variant = Plant:FindFirstChild("Variant")
-        local Dist = (CharPos - Plant:GetPivot().Position).Magnitude
-        if Prompt and Prompt.Enabled and (IgnoreDistance or Dist <= 15) and not HarvestIgnores[Variant and Variant.Value or ""] then
-            table.insert(List, Plant)
-        end
-    end
-end
-
-local function GetHarvestablePlants(IgnoreDistance)
-    local List = {}
-    CollectHarvestable(PlantsPhysical, List, IgnoreDistance)
-    return List
-end
-
-local function HarvestPlants()
-    for _, Plant in pairs(GetHarvestablePlants()) do
-        HarvestPlant(Plant)
-    end
-end
-
-local function SellInventory()
-    local Prev = LocalPlayer.Character:GetPivot()
-    LocalPlayer.Character:PivotTo(CFrame.new(62, 4, -26))
-    local PrevVal = ShecklesCount.Value
-    repeat
-        GameEvents.Sell_Inventory:FireServer()
-        wait()
-    until ShecklesCount.Value ~= PrevVal
-    LocalPlayer.Character:PivotTo(Prev)
-end
-
-local function AutoSellCheck()
-    if AutoSell and #GetInvCrops() >= SellThreshold then
-        SellInventory()
-    end
+local function GetSeedStock(ignoreZero)
+	local SeedShop = PlayerGui.Seed_Shop
+	local Items = SeedShop:FindFirstChild("Blueberry", true).Parent
+	local NewList = {}
+	for _, Item in next, Items:GetChildren() do
+		local Main = Item:FindFirstChild("Main_Frame")
+		if not Main then continue end
+		local count = tonumber(Main.Stock_Text.Text:match("%d+")) or 0
+		if not ignoreZero or count > 0 then
+			SeedStock[Item.Name] = count
+			NewList[Item.Name] = count
+		end
+	end
+	return NewList
 end
 
 local function BuySeed(Seed)
-    GameEvents.BuySeedStock:FireServer(Seed)
+	GameEvents.BuySeedStock:FireServer(Seed)
 end
 
 local function BuyAllSelectedSeeds()
-    local Stock = SeedStock[SelectedSeed]
-    if not Stock then return end
-    for _ = 1, Stock do
-        BuySeed(SelectedSeed)
-    end
+	local stock = SeedStock[SelectedSeedStock]
+	if not stock then return end
+	for i = 1, stock do
+		BuySeed(SelectedSeedStock)
+	end
 end
 
-local function GetSeedStock()
-    local Shop = PlayerGui:WaitForChild("Seed_Shop")
-    local Items = Shop:FindFirstChild("Blueberry", true).Parent:GetChildren()
-    for _, Item in pairs(Items) do
-        local Frame = Item:FindFirstChild("Main_Frame")
-        if Frame then
-            local Stock = tonumber(Frame.Stock_Text.Text:match("%d+"))
-            SeedStock[Item.Name] = Stock
-        end
-    end
-    return SeedStock
+local function HarvestPlant(Plant)
+	local prompt = Plant:FindFirstChild("ProximityPrompt", true)
+	if prompt and prompt.Enabled then
+		fireproximityprompt(prompt)
+	end
+end
+
+local function CanHarvest(Plant)
+	local Prompt = Plant:FindFirstChild("ProximityPrompt", true)
+	return Prompt and Prompt.Enabled
+end
+
+local function GetHarvestablePlants(ignoreDistance)
+	local plants, pos = {}, LocalPlayer.Character:GetPivot().Position
+	for _, Plant in next, PlantsPhysical:GetChildren() do
+		if Plant:FindFirstChild("Fruits") then
+			for _, Sub in next, Plant.Fruits:GetChildren() do
+				if CanHarvest(Sub) then table.insert(plants, Sub) end
+			end
+		end
+		if ignoreDistance or (Plant:GetPivot().Position - pos).Magnitude <= 15 then
+			local Variant = Plant:FindFirstChild("Variant")
+			if Variant and not HarvestIgnores[Variant.Value] then
+				if CanHarvest(Plant) then
+					table.insert(plants, Plant)
+				end
+			end
+		end
+	end
+	return plants
+end
+
+local function HarvestLoop()
+	for _, Plant in next, GetHarvestablePlants() do
+		HarvestPlant(Plant)
+	end
+end
+
+local function SellInventory()
+	if _G.IsSelling then return end
+	_G.IsSelling = true
+	local Character = LocalPlayer.Character
+	local Prev = Character:GetPivot()
+	local PrevCount = ShecklesCount.Value
+	Character:PivotTo(CFrame.new(62, 4, -26))
+	repeat
+		GameEvents.Sell_Inventory:FireServer()
+		task.wait()
+	until ShecklesCount.Value ~= PrevCount
+	Character:PivotTo(Prev)
+	task.wait(0.2)
+	_G.IsSelling = false
+end
+
+local function GetInvCrops()
+	local Crops = {}
+	for _, Tool in next, Backpack:GetChildren() do
+		if Tool:FindFirstChild("Item_String") then
+			table.insert(Crops, Tool)
+		end
+	end
+	for _, Tool in next, LocalPlayer.Character:GetChildren() do
+		if Tool:FindFirstChild("Item_String") then
+			table.insert(Crops, Tool)
+		end
+	end
+	return Crops
+end
+
+local function AutoSellCheck()
+	if AutoSell and #GetInvCrops() >= SellThreshold then
+		SellInventory()
+	end
 end
 
 local function AutoWalkLoop()
-    if AutoWalk then
-        local Plants = GetHarvestablePlants(true)
-        local Char = LocalPlayer.Character
-        local Hum = Char.Humanoid
-        if AutoWalkAllowRandom and (#Plants == 0 or math.random(1,3)==2) then
-            Hum:MoveTo(GetRandomFarmPoint())
-        else
-            for _, Plant in pairs(Plants) do
-                Hum:MoveTo(Plant:GetPivot().Position)
-            end
-        end
-    end
+	if _G.IsSelling then return end
+	local Human = LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
+	local Plants = GetHarvestablePlants(true)
+	if AutoWalkAllowRandom and (#Plants == 0 or math.random(1,3) == 2) then
+		Human:MoveTo(GetRandomFarmPoint())
+		AutoWalkStatusLabel:Set("Random point")
+	else
+		for _, Plant in next, Plants do
+			Human:MoveTo(Plant:GetPivot().Position)
+			AutoWalkStatusLabel:Set(Plant.Name)
+		end
+	end
 end
 
-local function NoClipLoop()
-    if NoClip then
-        for _, Part in pairs(LocalPlayer.Character:GetDescendants()) do
-            if Part:IsA("BasePart") then
-                Part.CanCollide = false
-            end
-        end
-    end
+local function NoclipLoop()
+	if not NoClip then return end
+	for _, Part in LocalPlayer.Character:GetDescendants() do
+		if Part:IsA("BasePart") then
+			Part.CanCollide = false
+		end
+	end
 end
 
---// Rayfield UI Setup
-Window:CreateLabel("🥕 Auto Plant")
+--// UI Elements
+Window:CreateLabel("🥕 Auto-Plant")
 Window:CreateDropdown({
-    Name = "Seed",
-    Options = function()
-        local keys = {}
-        for k in pairs(GetSeedStock()) do
-            table.insert(keys, k)
-        end
-        return keys
-    end,
-    CurrentOption = "",
-    Flag = "SelectedSeed",
-    Callback = function(option)
-        SelectedSeed = option
-    end
+	Name = "Seed",
+	Options = function()
+		local seeds = {}
+		for k in pairs(SeedStock) do table.insert(seeds, k) end
+		return seeds
+	end,
+	CurrentOption = "",
+	Flag = "SelectedSeed",
+	Callback = function(option) SelectedSeed = option end
 })
 Window:CreateToggle({
-    Name = "Auto Plant",
-    CurrentValue = false,
-    Callback = function(v) AutoPlant = v end
+	Name = "Enabled",
+	CurrentValue = false,
+	Callback = function(v) AutoPlant = v end
 })
 Window:CreateToggle({
-    Name = "Plant at Random Points",
-    CurrentValue = false,
-    Callback = function(v) AutoPlantRandom = v end
+	Name = "Plant at random points",
+	CurrentValue = false,
+	Callback = function(v) AutoPlantRandom = v end
 })
 Window:CreateButton({
-    Name = "Plant All Now",
-    Callback = AutoPlantLoop
+	Name = "Plant All",
+	Callback = AutoPlantLoop
 })
 
-Window:CreateLabel("🚜 Auto Harvest")
-Window:CreateToggle({ Name="Enabled", CurrentValue=false, Callback=function(v) AutoHarvest = v end })
-for k in pairs(HarvestIgnores) do
-    Window:CreateToggle({
-        Name = "Ignore: " .. k,
-        CurrentValue = false,
-        Callback = function(v) HarvestIgnores[k] = v end
-    })
+Window:CreateLabel("🚜 Auto-Harvest")
+Window:CreateToggle({
+	Name = "Enabled",
+	CurrentValue = false,
+	Callback = function(v) AutoHarvest = v end
+})
+for key, _ in pairs(HarvestIgnores) do
+	Window:CreateToggle({
+		Name = "Ignore: "..key,
+		CurrentValue = false,
+		Callback = function(v) HarvestIgnores[key] = v end
+	})
 end
 
-Window:CreateLabel("🛒 Auto Buy")
-Window:CreateToggle({ Name="Enabled", CurrentValue=false, Callback=function(v) AutoBuy = v end })
-Window:CreateButton({ Name = "Buy All", Callback = BuyAllSelectedSeeds })
-
-Window:CreateLabel("💰 Auto Sell")
-Window:CreateToggle({ Name="Enabled", CurrentValue=false, Callback=function(v) AutoSell = v end })
-Window:CreateSlider({
-    Name = "Sell Threshold",
-    Range = {1, 100},
-    Increment = 1,
-    CurrentValue = 15,
-    Callback = function(v) SellThreshold = v end
-})
+Window:CreateLabel("💰 Auto-Sell")
 Window:CreateButton({ Name = "Sell Inventory", Callback = SellInventory })
+Window:CreateToggle({
+	Name = "Enabled",
+	CurrentValue = false,
+	Callback = function(v) AutoSell = v end
+})
+Window:CreateSlider({
+	Name = "Crops Threshold",
+	Range = {1,199},
+	Increment = 1,
+	CurrentValue = 15,
+	Callback = function(v) SellThreshold = v end
+})
 
-Window:CreateLabel("🚶 Auto Walk")
-Window:CreateToggle({ Name = "Enabled", CurrentValue = false, Callback = function(v) AutoWalk = v end })
-Window:CreateToggle({ Name = "Allow Random Points", CurrentValue = true, Callback = function(v) AutoWalkAllowRandom = v end })
-Window:CreateSlider({ Name = "Max Delay", Range = {1, 30}, Increment = 1, CurrentValue = 10, Callback = function(v) AutoWalkMaxWait = v end })
-Window:CreateToggle({ Name = "NoClip", CurrentValue = false, Callback = function(v) NoClip = v end })
+Window:CreateLabel("🛒 Auto-Buy")
+Window:CreateDropdown({
+	Name = "Seed",
+	Options = function()
+		local stock = GetSeedStock(true)
+		local items = {}
+		for k in pairs(stock) do table.insert(items, k) end
+		return items
+	end,
+	CurrentOption = "",
+	Callback = function(option) SelectedSeedStock = option end
+})
+Window:CreateToggle({
+	Name = "Enabled",
+	CurrentValue = false,
+	Callback = function(v) AutoBuy = v end
+})
+Window:CreateButton({
+	Name = "Buy All",
+	Callback = BuyAllSelectedSeeds
+})
 
---// Main Loops
-RunService.Stepped:Connect(NoClipLoop)
+Window:CreateLabel("🚶 Auto-Walk")
+AutoWalkStatusLabel = Window:CreateLabel("Status: None")
+Window:CreateToggle({
+	Name = "Enabled",
+	CurrentValue = false,
+	Callback = function(v) AutoWalk = v end
+})
+Window:CreateToggle({
+	Name = "Allow Random Points",
+	CurrentValue = true,
+	Callback = function(v) AutoWalkAllowRandom = v end
+})
+Window:CreateToggle({
+	Name = "NoClip",
+	CurrentValue = false,
+	Callback = function(v) NoClip = v end
+})
+Window:CreateSlider({
+	Name = "Max Delay",
+	Range = {1, 120},
+	Increment = 1,
+	CurrentValue = 10,
+	Callback = function(v) AutoWalkMaxWait = v end
+})
+
+--// Background Loops
+RunService.Stepped:Connect(NoclipLoop)
 Backpack.ChildAdded:Connect(AutoSellCheck)
 
 coroutine.wrap(function()
-    while task.wait(.5) do
-        if AutoHarvest then HarvestPlants() end
-        if AutoPlant then AutoPlantLoop() end
-        if AutoBuy then BuyAllSelectedSeeds() end
-        if AutoWalk then AutoWalkLoop() wait(math.random(1, AutoWalkMaxWait)) end
-    end
+	while task.wait(.01) do
+		if AutoHarvest then HarvestLoop() end
+		if AutoBuy then BuyAllSelectedSeeds() end
+		if AutoPlant then AutoPlantLoop() end
+		if AutoWalk then
+			AutoWalkLoop()
+			task.wait(math.random(1, AutoWalkMaxWait))
+		end
+	end
+end)()
+
+coroutine.wrap(function()
+	while task.wait(0.3) do
+		GetSeedStock()
+		GetOwnedSeeds()
+	end
 end)()
