@@ -46,22 +46,22 @@ local function firePrompt(prompt)
 end
 
 local function getSeedStock()
-    local SeedShop = LocalPlayer.PlayerGui:FindFirstChild("Seed_Shop")
-    if not SeedShop then return {} end
-
     local stock = {}
-    -- Assuming the seeds are direct children under Seed_Shop or its descendants with Stock_Text
-    for _, item in pairs(SeedShop:GetDescendants()) do
-        if item.Name == "Stock_Text" and item:IsA("TextLabel") then
-            local parent = item.Parent
-            if parent and parent.Name then
-                local count = tonumber(item.Text:match("%d+")) or 0
-                stock[parent.Name] = count
-            end
+
+    -- Iterate through Backpack items
+    for _, item in pairs(LocalPlayer.Backpack:GetChildren()) do
+        -- Check if the item is a seed (adjust the condition to fit your game)
+        if item:IsA("Tool") and item.Name:lower():find("seed") then
+            -- You could parse the seed name here by removing "seed"
+            local seedName = item.Name:gsub("[Ss]eed", ""):gsub("^%s*(.-)%s*$", "%1") -- trim spaces
+            -- Count how many of this seed you have
+            stock[seedName] = (stock[seedName] or 0) + 1
         end
     end
+
     return stock
 end
+
 
 local function buySeed(seed)
     if seed and GameEvents:FindFirstChild("BuySeedStock") then
