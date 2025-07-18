@@ -14,20 +14,339 @@ local Window = Rayfield:CreateWindow({
 })
 
 local MainTab = Window:CreateTab("Main")
+local TeleTab = Window:CreateTab("Teleport")
+local MiscTab = Window:CreateTab("Misc")
 
-local autoFarm = false
+-- Services & references
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+
+local LocalPlayer = Players.LocalPlayer
+local Character = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
+local Humanoid = Character:FindFirstChildOfClass("Humanoid")
+
+local GameEvents = ReplicatedStorage:WaitForChild("GameEvents")
+local WorkspaceFarm = workspace:WaitForChild("Farm")
+
+-- Flags for loops
+local AutoHarvestEnabled = false
+local AutoPlantEnabled = false
+local AutoBuyEnabled = false
+local AutoSellEnabled = false
+local AutoWalkEnabled = false
+local NoClipEnabled = false
+
+-- More flags for internal use
+local AutoPlantRandomPoints = false
+
+-- Seed selection and stock
+local SelectedSeed = nil
+local SeedStock = {}
+
+-- Functions from your friend's script (simplified and adapted) --
+
+local function firePrompt(prompt)
+    if prompt and prompt:IsA("ProximityPrompt") and prompt.Enabled then
+        fireproximityprompt(prompt)
+    end
+end
+
+local function getSeedStock()
+    local SeedShop = LocalPlayer.PlayerGui:FindFirstChild("Seed_Shop")
+    if not SeedShop then return {} end
+    local itemsFolder = SeedShop:FindFirstChild("Blueberry", true)
+    if not itemsFolder or not itemsFolder.Parent then return {} end
+    local items = itemsFolder.Parent
+
+    local stock = {}
+    for _, item in pairs(items:GetChildren()) do
+        local mainFrame = item:FindFirstChild("Main_Frame")
+        if mainFrame then
+            local stockText = mainFrame:FindFirstChild("Stock_Text")
+            if stockText then
+                local count = tonumber(stockText.Text:match("%d+")) or 0
+                stock[item.Name] = count
+            end
+        end
+    end
+    return stock
+end
+
+local function buySeed(seed)
+    if seed and GameEvents:FindFirstChild("BuySeedStock") then
+        GameEvents.BuySeedStock:FireServer(seed)
+    end
+end
+
+local function plantAtPosition(pos, seed)
+    if GameEvents:FindFirstChild("Plant_RE") then
+        GameEvents.Plant_RE:FireServer(pos, seed)
+    end
+end
+
+local function harvestPlant(plant)
+    local prompt = plant:FindFirstChildOfClass("ProximityPrompt") or plant:FindFirstChild("ProximityPrompt", true)
+    if prompt and prompt.Enabled then
+        fireproximityprompt(prompt)
+    end
+end
+
+local function getMyFarm()
+    local farms = workspace:FindFirstChild("Farm")
+    if not farms then return nil end
+    for _, farm in pairs(farms:GetChildren()) do
+        local important = farm:FindFirstChild("Important")
+        if important and important:FindFirstChild("Data") and important.Data:FindFirstChild("Owner") then
+            if important.Data.Owner.Value == LocalPlayer.Name then
+                return farm
+            end
+        end
+    end
+    return nil
+end
+
+local function getPlantLocations()
+    local myFarm = getMyFarm()
+    if not myFarm then return {} end
+    local important = myFarm:FindFirstChild("Important")
+    if not important then return {} end
+    return important:FindFirstChild("Plant_Locations") or {}
+end
+
+local function autoPlantLoop()
+    while AutoPlantEnabled do
+        if SelectedSeed == nil or SelectedSeed == "" then
+            task.wait(1)
+            continue
+        end
+        local ownedSeeds = {}
+        -- Collect owned seeds from Backpack and Character
+        for _, tool in pairs(LocalPlayer.Backpack:GetChildren()) do
+            if tool:IsA("Tool") and tool.Name == SelectedSeed then
+                ownedSeeds[#ownedSeeds + 1] = tool
+            end
+        end
+        for _, tool in pairs(Character:GetChildren()) do
+            if tool:IsA("Tool") and tool.Name == SelectedSeed then
+                ownedSeeds[#ownedSeeds + 1] = tool
+            end
+        end
+
+        if #ownedSeeds == 0 then
+            task.wait(3) -- no seeds to plant
+            continue
+        end
+
+        local plantLocations = getPlantLocations()
+        if #plantLocations:GetChildren() == 0 then
+            task.wait(3)
+            continue
+        end
+
+        if AutoPlantRandomPoints then
+            -- Plant at random points inside your farm
+            local locs = plantLocations:GetChildren()
+            local randomLoc = locs[math.random(1, #locs)]
+            if randomLoc and randomLoc:IsA("BasePart") then
+                plantAtPosition(randomLoc.Position + Vector3.new(0,3,0), SelectedSeed)
+            end
+        else
+            -- Plant on all spots linearly
+            for _, pos in pairs(plantLocations:GetChildren()) do
+                if not AutoPlantEnabled then break end
+                if pos:IsA("BasePart") then
+                    plantAtPosition(pos.Position + Vector3.new(0,3,0), SelectedSeed)
+                    task.wait(0.3)
+                end
+            end
+        end
+        task.wait(1)
+    end
+end
+
+local function autoHarvestLoop()
+    while AutoHarvestEnabled do
+        local myFarm = getMyFarm()
+        if not myFarm then task.wait(1) continue end
+        local important = myFarm:FindFirstChild("Important")
+        if not important then task.wait(1) continue end
+        local plantsPhysical = important:FindFirstChild("Plants_Physical")
+        if not plantsPhysical then task.wait(1) continue end
+        for _, plant in pairs(plantsPhysical:GetChildren()) do
+            if not AutoHarvestEnabled then break end
+            harvestPlant(plant)
+            task.wait(0.3)
+        end
+        task.wait(1)
+    end
+end
+
+local function autoBuyLoop()
+    while AutoBuyEnabled do
+        if SelectedSeed and SelectedSeed ~= "" then
+            buySeed(SelectedSeed)
+        end
+        task.wait(5)
+    end
+end
+
+local function autoSellLoop()
+    while AutoSellEnabled do
+        local sellPad = workspace:FindFirstChild("SellPad") or workspace:FindFirstChild("SellArea")
+        if sellPad and Character then
+            Character:PivotTo(sellPad.CFrame + Vector3.new(0, 3, 0))
+        end
+        task.wait(3)
+    end
+end
+
+local function autoWalkLoop()
+    while AutoWalkEnabled do
+        local myFarm = getMyFarm()
+        if not myFarm then task.wait(1) continue end
+        local important = myFarm:FindFirstChild("Important")
+        if not important then task.wait(1) continue end
+        local plantsPhysical = important:FindFirstChild("Plants_Physical")
+        if not plantsPhysical then task.wait(1) continue end
+        -- Walk to each plant sequentially
+        for _, plant in pairs(plantsPhysical:GetChildren()) do
+            if not AutoWalkEnabled then break end
+            if plant:IsA("Model") then
+                local pos = plant:GetPivot().Position
+                Humanoid:MoveTo(pos)
+                task.wait(2) -- wait for walk to complete
+            end
+        end
+        task.wait(1)
+    end
+end
+
+local function noclipLoop()
+    while NoClipEnabled do
+        if Character then
+            for _, part in pairs(Character:GetDescendants()) do
+                if part:IsA("BasePart") then
+                    part.CanCollide = false
+                end
+            end
+        end
+        task.wait(0.3)
+    end
+end
+
+-- Rayfield GUI Controls --
+
+-- Seed selection dropdown (dynamically populate with seeds available)
+local seedDropdown = MainTab:CreateDropdown({
+    Name = "Select Seed",
+    Options = {},
+    CurrentOption = nil,
+    MultiSelect = false,
+    Flag = "SelectedSeed",
+    Callback = function(selection)
+        SelectedSeed = selection
+    end
+})
+
+-- Update seed dropdown options every 10 seconds
+task.spawn(function()
+    while true do
+        local stock = getSeedStock()
+        local seeds = {}
+        for seedName, count in pairs(stock) do
+            table.insert(seeds, seedName)
+        end
+        if #seeds > 0 then
+            seedDropdown:UpdateOptions(seeds)
+        end
+        task.wait(10)
+    end
+end)
 
 MainTab:CreateToggle({
-    Name = "Auto Harvest Crops (Universal)",
+    Name = "Auto Harvest",
     CurrentValue = false,
+    Flag = "AutoHarvest",
     Callback = function(state)
-        autoFarm = state
-        while autoFarm and task.wait(0.3) do
-            for _, v in pairs(workspace.Farm:GetDescendants()) do
-                if v:IsA("ProximityPrompt") then
-                    local parent = v.Parent
-                    if parent and parent.Name == "Base" then
-                        fireproximityprompt(v)
+        AutoHarvestEnabled = state
+        if state then
+            task.spawn(autoHarvestLoop)
+        end
+    end,
+})
+
+MainTab:CreateToggle({
+    Name = "Auto Plant",
+    CurrentValue = false,
+    Flag = "AutoPlant",
+    Callback = function(state)
+        AutoPlantEnabled = state
+        if state then
+            task.spawn(autoPlantLoop)
+        end
+    end,
+})
+
+MainTab:CreateToggle({
+    Name = "Auto Buy Seed",
+    CurrentValue = false,
+    Flag = "AutoBuySeed",
+    Callback = function(state)
+        AutoBuyEnabled = state
+        if state then
+            task.spawn(autoBuyLoop)
+        end
+    end,
+})
+
+MainTab:CreateToggle({
+    Name = "Auto Sell",
+    CurrentValue = false,
+    Flag = "AutoSell",
+    Callback = function(state)
+        AutoSellEnabled = state
+        if state then
+            task.spawn(autoSellLoop)
+        end
+    end,
+})
+
+MainTab:CreateToggle({
+    Name = "Auto Walk to Plants",
+    CurrentValue = false,
+    Flag = "AutoWalk",
+    Callback = function(state)
+        AutoWalkEnabled = state
+        if state then
+            task.spawn(autoWalkLoop)
+        end
+    end,
+})
+
+MainTab:CreateToggle({
+    Name = "Plant at Random Points",
+    CurrentValue = false,
+    Flag = "PlantRandomPoints",
+    Callback = function(state)
+        AutoPlantRandomPoints = state
+    end,
+})
+
+MiscTab:CreateToggle({
+    Name = "No Clip",
+    CurrentValue = false,
+    Flag = "NoClip",
+    Callback = function(state)
+        NoClipEnabled = state
+        if state then
+            task.spawn(noclipLoop)
+        else
+            -- Restore CanCollide to true on all parts when disabled
+            if Character then
+                for _, part in pairs(Character:GetDescendants()) do
+                    if part:IsA("BasePart") then
+                        part.CanCollide = true
                     end
                 end
             end
@@ -35,168 +354,35 @@ MainTab:CreateToggle({
     end,
 })
 
--- Auto Plant
-local autoPlant = false
-MainTab:CreateToggle({
-    Name = "Auto Replant",
-    CurrentValue = false,
-    Callback = function(state)
-        autoPlant = state
-        while autoPlant and task.wait(0.3) do
-            for _, v in pairs(workspace.Farm:GetDescendants()) do
-                if v:IsA("ProximityPrompt") and v.Name == "Plant" then
-                    fireproximityprompt(v)
-                end
-            end
-        end
-    end,
-})
+-- Teleport Buttons (to some known locations)
 
--- Auto Water
-local autoWater = false
-MainTab:CreateToggle({
-    Name = "Auto Water Plants",
-    CurrentValue = false,
-    Callback = function(state)
-        autoWater = state
-        while autoWater and task.wait(0.3) do
-            for _, v in pairs(workspace.Farm:GetDescendants()) do
-                if v:IsA("ProximityPrompt") and v.Name == "Water" then
-                    fireproximityprompt(v)
-                end
-            end
-        end
-    end,
-})
-
--- Auto Fertilize
-local autoFert = false
-MainTab:CreateToggle({
-    Name = "Auto Fertilize",
-    CurrentValue = false,
-    Callback = function(state)
-        autoFert = state
-        while autoFert and task.wait(0.3) do
-            for _, v in pairs(workspace.Farm:GetDescendants()) do
-                if v:IsA("ProximityPrompt") and v.Name == "Fertilize" then
-                    fireproximityprompt(v)
-                end
-            end
-        end
-    end,
-})
-
--- Auto Sell
-local autoSell = false
-MainTab:CreateToggle({
-    Name = "Auto Sell",
-    CurrentValue = false,
-    Callback = function(state)
-        autoSell = state
-        while autoSell and task.wait(1) do
-            local sellPad = workspace:FindFirstChild("SellPad") or workspace:FindFirstChild("SellArea")
-            if sellPad then
-                game.Players.LocalPlayer.Character:PivotTo(sellPad.CFrame + Vector3.new(0, 3, 0))
-            end
-        end
-    end,
-})
-
--- Walkspeed
-local walkSpeed = 16
-MainTab:CreateInput({
-    Name = "WalkSpeed",
-    PlaceholderText = "16",
-    RemoveTextAfterFocusLost = true,
-    Callback = function(value)
-        local ws = tonumber(value)
-        if ws then
-            walkSpeed = math.clamp(ws, 1, 100)
-            local hum = game.Players.LocalPlayer.Character and game.Players.LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
-            if hum then hum.WalkSpeed = walkSpeed end
-        end
-    end,
-})
-
-local wsLoop = false
-MainTab:CreateToggle({
-    Name = "Apply WalkSpeed Constantly",
-    CurrentValue = false,
-    Callback = function(state)
-        wsLoop = state
-        while wsLoop and task.wait(0.3) do
-            local hum = game.Players.LocalPlayer.Character and game.Players.LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
-            if hum then hum.WalkSpeed = walkSpeed end
-        end
-    end,
-})
-
--- Infinite Stamina
-MainTab:CreateButton({
-    Name = "Infinite Stamina (Experimental)",
+TeleTab:CreateButton({
+    Name = "Teleport to Farm Center",
     Callback = function()
-        local player = game.Players.LocalPlayer
-        local stats = player:FindFirstChild("Stats") or player:FindFirstChild("Leaderstats")
-        if stats then
-            local stamina = stats:FindFirstChild("Stamina")
-            if stamina then
-                stamina:GetPropertyChangedSignal("Value"):Connect(function()
-                    stamina.Value = 100
-                end)
+        local myFarm = getMyFarm()
+        if myFarm then
+            local center = myFarm:FindFirstChild("Center") or myFarm:FindFirstChildWhichIsA("BasePart")
+            if center then
+                Character:PivotTo(center.CFrame + Vector3.new(0, 3, 0))
+            else
+                warn("No center found on your farm.")
             end
+        else
+            warn("You don't own a farm.")
         end
     end,
 })
 
--- TELEPORT TAB
-local TeleTab = Window:CreateTab("Teleport")
-
-local zones = {
-    ["Home Plot"] = "YourPlot",
-    ["Spawn"] = "SpawnLocation",
-    ["Sell Area"] = "SellPad",
-    ["Watering Area"] = "WaterSource",
-    ["Upgrade Shop"] = "UpgradeShop",
-    ["Fertilizer Zone"] = "FertilizerZone"
-}
-
-for name, objName in pairs(zones) do
-    TeleTab:CreateButton({
-        Name = "Teleport to " .. name,
-        Callback = function()
-            local loc = workspace:FindFirstChild(objName)
-            if loc and loc:IsA("BasePart") then
-                game.Players.LocalPlayer.Character:PivotTo(loc.CFrame + Vector3.new(0, 5, 0))
-            end
-        end,
-    })
-end
-
--- GARDEN MODIFIERS
-local MiscTab = Window:CreateTab("Misc")
-
-MiscTab:CreateToggle({
-    Name = "Auto Collect Drops",
-    CurrentValue = false,
-    Callback = function(state)
-        _G.AutoCollect = state
-        while _G.AutoCollect and task.wait(0.2) do
-            for _, drop in pairs(workspace:GetDescendants()) do
-                if drop:IsA("ProximityPrompt") and drop.Name == "Collect" then
-                    fireproximityprompt(drop)
-                end
-            end
-        end
-    end,
-})
-
-MiscTab:CreateButton({
-    Name = "Instant Plant Growth (Glitchy)",
+TeleTab:CreateButton({
+    Name = "Teleport to Sell Pad",
     Callback = function()
-        for _, crop in pairs(workspace.Farm:GetDescendants()) do
-            if crop:FindFirstChild("Growth") then
-                crop.Growth.Value = 100
-            end
+        local sellPad = workspace:FindFirstChild("SellPad") or workspace:FindFirstChild("SellArea")
+        if sellPad then
+            Character:PivotTo(sellPad.CFrame + Vector3.new(0, 3, 0))
+        else
+            warn("SellPad not found in workspace.")
         end
     end,
 })
+
+return Window
