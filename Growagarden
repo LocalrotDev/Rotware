@@ -108,7 +108,7 @@ end
 local Window = Luna:CreateWindow({
     Title = "Rotware Hub v1 - Grow a Garden",
     Size = Vector2.new(400, 300),
-    Theme = Luna.Themes.Dark,
+    
 })
 
 -- Seeds Dropdown
