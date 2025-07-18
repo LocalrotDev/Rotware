@@ -17,7 +17,7 @@ local MainTab = Window:CreateTab("Main")
 local TeleTab = Window:CreateTab("Teleport")
 local MiscTab = Window:CreateTab("Misc")
 
--- Services & references
+-- Services
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
@@ -36,55 +36,98 @@ local AutoBuyEnabled = false
 local AutoSellEnabled = false
 local AutoWalkEnabled = false
 local NoClipEnabled = false
-
--- More flags for internal use
 local AutoPlantRandomPoints = false
 
--- Seed selection and stock
+-- Selected seed
 local SelectedSeed = nil
-local SeedStock = {}
 
--- Functions from your friend's script (simplified and adapted) --
-
+-- Utility: Fire a proximity prompt safely
 local function firePrompt(prompt)
     if prompt and prompt:IsA("ProximityPrompt") and prompt.Enabled then
         fireproximityprompt(prompt)
     end
 end
 
+-- Get seed stock from Seed Shop GUI
 local function getSeedStock()
     local SeedShop = LocalPlayer.PlayerGui:FindFirstChild("Seed_Shop")
     if not SeedShop then return {} end
-    local itemsFolder = SeedShop:FindFirstChild("Blueberry", true)
-    if not itemsFolder or not itemsFolder.Parent then return {} end
-    local items = itemsFolder.Parent
+
+    -- Instead of hardcoded "Blueberry", search all items inside SeedShop
+    local itemsFolder = SeedShop:FindFirstChild("Items") or SeedShop:FindFirstChildWhichIsA("Folder")
+    if not itemsFolder then return {} end
 
     local stock = {}
-    for _, item in pairs(items:GetChildren()) do
+    for _, item in pairs(itemsFolder:GetChildren()) do
         local mainFrame = item:FindFirstChild("Main_Frame")
         if mainFrame then
             local stockText = mainFrame:FindFirstChild("Stock_Text")
             if stockText then
                 local count = tonumber(stockText.Text:match("%d+")) or 0
-                stock[item.Name] = count
+                if count > 0 then
+                    stock[item.Name] = count
+                end
             end
         end
     end
     return stock
 end
 
+-- Refresh the seed dropdown options and update selected seed
+local function refreshSeedDropdown()
+    local stock = getSeedStock()
+    local seeds = {}
+
+    for seedName, _ in pairs(stock) do
+        table.insert(seeds, seedName)
+    end
+
+    if #seeds == 0 then
+        seeds = {"No Seeds Found"}
+        SelectedSeed = nil
+    else
+        SelectedSeed = seeds[1]
+    end
+
+    seedDropdown:UpdateOptions(seeds)
+    seedDropdown:SetValue(SelectedSeed)
+    print("[RotwareHub] Seed list refreshed with " .. tostring(#seeds) .. " seeds.")
+end
+
+-- Fire seed refresh every 10 seconds asynchronously
+task.spawn(function()
+    while true do
+        refreshSeedDropdown()
+        task.wait(10)
+    end
+end)
+
+-- Button to manually refresh seed list
+MainTab:CreateButton({
+    Name = "Refresh Seed List",
+    Callback = function()
+        refreshSeedDropdown()
+    end
+})
+
+-- Initial refresh on load
+refreshSeedDropdown()
+
+-- Buy seed by name
 local function buySeed(seed)
     if seed and GameEvents:FindFirstChild("BuySeedStock") then
         GameEvents.BuySeedStock:FireServer(seed)
     end
 end
 
+-- Plant at a world position with a given seed
 local function plantAtPosition(pos, seed)
     if GameEvents:FindFirstChild("Plant_RE") then
         GameEvents.Plant_RE:FireServer(pos, seed)
     end
 end
 
+-- Harvest a plant by firing its proximity prompt
 local function harvestPlant(plant)
     local prompt = plant:FindFirstChildOfClass("ProximityPrompt") or plant:FindFirstChild("ProximityPrompt", true)
     if prompt and prompt.Enabled then
@@ -92,9 +135,11 @@ local function harvestPlant(plant)
     end
 end
 
+-- Get your own farm model in workspace
 local function getMyFarm()
     local farms = workspace:FindFirstChild("Farm")
     if not farms then return nil end
+
     for _, farm in pairs(farms:GetChildren()) do
         local important = farm:FindFirstChild("Important")
         if important and important:FindFirstChild("Data") and important.Data:FindFirstChild("Owner") then
@@ -106,6 +151,7 @@ local function getMyFarm()
     return nil
 end
 
+-- Get all plant locations parts in your farm
 local function getPlantLocations()
     local myFarm = getMyFarm()
     if not myFarm then return {} end
@@ -114,27 +160,30 @@ local function getPlantLocations()
     return important:FindFirstChild("Plant_Locations") or {}
 end
 
+-- Auto Plant Loop
 local function autoPlantLoop()
     while AutoPlantEnabled do
-        if SelectedSeed == nil or SelectedSeed == "" then
+        if not SelectedSeed or SelectedSeed == "" then
             task.wait(1)
             continue
         end
+
         local ownedSeeds = {}
-        -- Collect owned seeds from Backpack and Character
+
         for _, tool in pairs(LocalPlayer.Backpack:GetChildren()) do
             if tool:IsA("Tool") and tool.Name == SelectedSeed then
-                ownedSeeds[#ownedSeeds + 1] = tool
+                table.insert(ownedSeeds, tool)
             end
         end
+
         for _, tool in pairs(Character:GetChildren()) do
             if tool:IsA("Tool") and tool.Name == SelectedSeed then
-                ownedSeeds[#ownedSeeds + 1] = tool
+                table.insert(ownedSeeds, tool)
             end
         end
 
         if #ownedSeeds == 0 then
-            task.wait(3) -- no seeds to plant
+            task.wait(3) -- No seeds
             continue
         end
 
@@ -145,26 +194,26 @@ local function autoPlantLoop()
         end
 
         if AutoPlantRandomPoints then
-            -- Plant at random points inside your farm
             local locs = plantLocations:GetChildren()
             local randomLoc = locs[math.random(1, #locs)]
             if randomLoc and randomLoc:IsA("BasePart") then
-                plantAtPosition(randomLoc.Position + Vector3.new(0,3,0), SelectedSeed)
+                plantAtPosition(randomLoc.Position + Vector3.new(0, 3, 0), SelectedSeed)
             end
         else
-            -- Plant on all spots linearly
             for _, pos in pairs(plantLocations:GetChildren()) do
                 if not AutoPlantEnabled then break end
                 if pos:IsA("BasePart") then
-                    plantAtPosition(pos.Position + Vector3.new(0,3,0), SelectedSeed)
+                    plantAtPosition(pos.Position + Vector3.new(0, 3, 0), SelectedSeed)
                     task.wait(0.3)
                 end
             end
         end
+
         task.wait(1)
     end
 end
 
+-- Auto Harvest Loop
 local function autoHarvestLoop()
     while AutoHarvestEnabled do
         local myFarm = getMyFarm()
@@ -173,15 +222,18 @@ local function autoHarvestLoop()
         if not important then task.wait(1) continue end
         local plantsPhysical = important:FindFirstChild("Plants_Physical")
         if not plantsPhysical then task.wait(1) continue end
+
         for _, plant in pairs(plantsPhysical:GetChildren()) do
             if not AutoHarvestEnabled then break end
             harvestPlant(plant)
             task.wait(0.3)
         end
+
         task.wait(1)
     end
 end
 
+-- Auto Buy Loop
 local function autoBuyLoop()
     while AutoBuyEnabled do
         if SelectedSeed and SelectedSeed ~= "" then
@@ -191,6 +243,7 @@ local function autoBuyLoop()
     end
 end
 
+-- Auto Sell Loop
 local function autoSellLoop()
     while AutoSellEnabled do
         local sellPad = workspace:FindFirstChild("SellPad") or workspace:FindFirstChild("SellArea")
@@ -201,6 +254,7 @@ local function autoSellLoop()
     end
 end
 
+-- Auto Walk Loop
 local function autoWalkLoop()
     while AutoWalkEnabled do
         local myFarm = getMyFarm()
@@ -209,19 +263,21 @@ local function autoWalkLoop()
         if not important then task.wait(1) continue end
         local plantsPhysical = important:FindFirstChild("Plants_Physical")
         if not plantsPhysical then task.wait(1) continue end
-        -- Walk to each plant sequentially
+
         for _, plant in pairs(plantsPhysical:GetChildren()) do
             if not AutoWalkEnabled then break end
             if plant:IsA("Model") then
                 local pos = plant:GetPivot().Position
                 Humanoid:MoveTo(pos)
-                task.wait(2) -- wait for walk to complete
+                task.wait(2) -- wait for walking
             end
         end
+
         task.wait(1)
     end
 end
 
+-- No Clip Loop
 local function noclipLoop()
     while NoClipEnabled do
         if Character then
@@ -237,7 +293,6 @@ end
 
 -- Rayfield GUI Controls --
 
--- Seed selection dropdown (dynamically populate with seeds available)
 local seedDropdown = MainTab:CreateDropdown({
     Name = "Select Seed",
     Options = {},
@@ -246,23 +301,8 @@ local seedDropdown = MainTab:CreateDropdown({
     Flag = "SelectedSeed",
     Callback = function(selection)
         SelectedSeed = selection
-    end
+    end,
 })
-
--- Update seed dropdown options every 10 seconds
-task.spawn(function()
-    while true do
-        local stock = getSeedStock()
-        local seeds = {}
-        for seedName, count in pairs(stock) do
-            table.insert(seeds, seedName)
-        end
-        if #seeds > 0 then
-            seedDropdown:UpdateOptions(seeds)
-        end
-        task.wait(10)
-    end
-end)
 
 MainTab:CreateToggle({
     Name = "Auto Harvest",
@@ -342,7 +382,6 @@ MiscTab:CreateToggle({
         if state then
             task.spawn(noclipLoop)
         else
-            -- Restore CanCollide to true on all parts when disabled
             if Character then
                 for _, part in pairs(Character:GetDescendants()) do
                     if part:IsA("BasePart") then
@@ -354,7 +393,7 @@ MiscTab:CreateToggle({
     end,
 })
 
--- Teleport Buttons (to some known locations)
+-- Teleport buttons
 
 TeleTab:CreateButton({
     Name = "Teleport to Farm Center",
