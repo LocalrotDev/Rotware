@@ -35,7 +35,6 @@ MainTab:CreateToggle({
     end,
 })
 
-
 -- Auto Plant
 local autoPlant = false
 MainTab:CreateToggle({
@@ -44,12 +43,9 @@ MainTab:CreateToggle({
     Callback = function(state)
         autoPlant = state
         while autoPlant and task.wait(0.3) do
-            local plot = workspace:FindFirstChild(game.Players.LocalPlayer.Name .. "'s Plot")
-            if plot then
-                for _, v in pairs(plot:GetDescendants()) do
-                    if v:IsA("ProximityPrompt") and v.Name == "Plant" then
-                        fireproximityprompt(v)
-                    end
+            for _, v in pairs(workspace.Farm:GetDescendants()) do
+                if v:IsA("ProximityPrompt") and v.Name == "Plant" then
+                    fireproximityprompt(v)
                 end
             end
         end
@@ -64,12 +60,9 @@ MainTab:CreateToggle({
     Callback = function(state)
         autoWater = state
         while autoWater and task.wait(0.3) do
-            local plot = workspace:FindFirstChild(game.Players.LocalPlayer.Name .. "'s Plot")
-            if plot then
-                for _, v in pairs(plot:GetDescendants()) do
-                    if v:IsA("ProximityPrompt") and v.Name == "Water" then
-                        fireproximityprompt(v)
-                    end
+            for _, v in pairs(workspace.Farm:GetDescendants()) do
+                if v:IsA("ProximityPrompt") and v.Name == "Water" then
+                    fireproximityprompt(v)
                 end
             end
         end
@@ -84,12 +77,9 @@ MainTab:CreateToggle({
     Callback = function(state)
         autoFert = state
         while autoFert and task.wait(0.3) do
-            local plot = workspace:FindFirstChild(game.Players.LocalPlayer.Name .. "'s Plot")
-            if plot then
-                for _, v in pairs(plot:GetDescendants()) do
-                    if v:IsA("ProximityPrompt") and v.Name == "Fertilize" then
-                        fireproximityprompt(v)
-                    end
+            for _, v in pairs(workspace.Farm:GetDescendants()) do
+                if v:IsA("ProximityPrompt") and v.Name == "Fertilize" then
+                    fireproximityprompt(v)
                 end
             end
         end
@@ -203,12 +193,9 @@ MiscTab:CreateToggle({
 MiscTab:CreateButton({
     Name = "Instant Plant Growth (Glitchy)",
     Callback = function()
-        local plot = workspace:FindFirstChild(game.Players.LocalPlayer.Name .. "'s Plot")
-        if plot then
-            for _, crop in pairs(plot:GetDescendants()) do
-                if crop:FindFirstChild("Growth") then
-                    crop.Growth.Value = 100
-                end
+        for _, crop in pairs(workspace.Farm:GetDescendants()) do
+            if crop:FindFirstChild("Growth") then
+                crop.Growth.Value = 100
             end
         end
     end,
